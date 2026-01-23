@@ -57,7 +57,6 @@ def load_models():
 
     return sentiment_model, emotion_model
 
-
 sentiment_model, emotion_model = load_models()
 
 # -------------------------------
@@ -75,6 +74,18 @@ def batch_predict(pipeline_model, texts, batch_size=8):
         results.extend(preds)
     return results
 
+def rating_to_sentiment(rating):
+    if rating <= 2:
+        return "negative"
+    elif rating == 3:
+        return "neutral"
+    else:
+        return "positive"
+
+# Optional: clean text if needed
+def clean_text(text):
+    return str(text).strip()
+
 # -------------------------------
 # SINGLE REVIEW ANALYSIS
 # -------------------------------
@@ -91,15 +102,12 @@ user_rating = st.radio(
 
 if st.button("Analyze Review"):
     if user_review.strip():
-
         sentiment_result = sentiment_model(user_review)[0]
         sentiment_label = label_map[sentiment_result["label"]]
         sentiment_score = sentiment_result["score"]
 
         emotion_results = emotion_model(user_review)[0]
-        emotion_dict = {
-            e["label"]: round(e["score"] * 100, 2) for e in emotion_results
-        }
+        emotion_dict = {e["label"]: round(e["score"] * 100, 2) for e in emotion_results}
 
         rating_sentiment = rating_to_sentiment(user_rating)
 
@@ -109,7 +117,6 @@ if st.button("Analyze Review"):
         st.write(f"**Rating-based Sentiment:** {rating_sentiment}")
 
         st.subheader("🎭 Emotion Detection")
-
         df_emotion = pd.DataFrame({
             "Emotion": [f"{emoji_map.get(k,'')} {k.capitalize()}" for k in emotion_dict],
             "Score (%)": list(emotion_dict.values())
@@ -130,7 +137,6 @@ if st.button("Analyze Review"):
         st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("⚠️ Sentiment vs Rating Check")
-
         if sentiment_label != rating_sentiment:
             st.warning("Mismatch detected between AI sentiment and user rating!")
         else:
@@ -148,12 +154,19 @@ if uploaded_file:
     st.write("Preview of uploaded dataset:")
     st.dataframe(df.head())
 
+    # Select review text column
     text_column = st.selectbox(
         "Select the column that contains review text:",
         df.columns
     )
 
-    # 🔧 FIX 1: slider MUST be here (df already exists)
+    # Select rating column
+    rating_column = st.selectbox(
+        "Select the column that contains ratings (1–5):",
+        df.columns
+    )
+
+    # Slider to limit rows for performance
     max_rows = st.slider(
         "Limit number of reviews to analyze (for performance):",
         min_value=100,
@@ -164,59 +177,38 @@ if uploaded_file:
 
     if st.button("Analyze Dataset"):
         with st.spinner("Analyzing reviews... Please wait."):
+            # Prepare text for prediction
+            texts = df[text_column].astype(str).apply(clean_text).tolist()[:max_rows]
 
-            # 🔧 FIX 2: LIMIT rows here
-            texts = (
-                df[text_column]
-                .astype(str)
-                .apply(clean_text)
-                .tolist()[:max_rows]
-            )
+            # Predict AI sentiment
+            sentiment_preds = batch_predict(sentiment_model, texts)
 
-            sentiments = sentiment_pipeline(
-                texts,
-                batch_size=32,
-                truncation=True
-            )
-
-            emotions = emotion_pipeline(
-                texts,
-                batch_size=32,
-                truncation=True
-            )
-
+            # Create result dataframe
             df_result = df.head(max_rows).copy()
+            df_result["ai_sentiment"] = [label_map[s["label"]] for s in sentiment_preds]
+            df_result["ai_sentiment_score"] = [s["score"] for s in sentiment_preds]
 
-            df_result["Sentiment"] = [
-                "Positive" if s["label"] == "POSITIVE" else "Negative"
-                for s in sentiments
-            ]
-            df_result["Sentiment_Score"] = [s["score"] for s in sentiments]
-
-            df_result["Emotion"] = [e["label"] for e in emotions]
-            df_result["Emotion_Score"] = [e["score"] for e in emotions]
+            # Create rating sentiment
+            df_result["rating_sentiment"] = df_result[rating_column].apply(rating_to_sentiment)
 
         st.success("Batch analysis completed!")
-
         st.dataframe(df_result.head())
 
         # -------------------------------
         # Batch Summary Statistics
         # -------------------------------
         st.subheader("📊 Batch Analysis Summary")
-
         total_reviews = len(df_result)
-        sentiment_counts = df_result["Sentiment"].value_counts(normalize=True) * 100
+        sentiment_counts = df_result["ai_sentiment"].value_counts(normalize=True) * 100
 
-        positive_pct = sentiment_counts.get("Positive", 0)
-        negative_pct = sentiment_counts.get("Negative", 0)
-
-        dominant_emotion = df_result["Emotion"].value_counts().idxmax()
+        positive_pct = sentiment_counts.get("positive", 0)
+        negative_pct = sentiment_counts.get("negative", 0)
+        dominant_emotion = "N/A"  # Optional: can compute if emotion predictions are added
 
         st.write(f"*Total reviews analyzed:* {total_reviews}")
         st.write(f"*Positive reviews:* {positive_pct:.2f}%")
         st.write(f"*Negative reviews:* {negative_pct:.2f}%")
-        st.write(f"*Dominant emotion:* {dominant_emotion.capitalize()}")
+        st.write(f"*Dominant emotion:* {dominant_emotion}")
 
         if positive_pct > negative_pct:
             st.info("📌 Overall sentiment trend: Mostly Positive")
@@ -231,30 +223,26 @@ if uploaded_file:
             "text/csv"
         )
 
-    # -------------------------------
-    # CONFUSION MATRIX
-    # -------------------------------
-    st.subheader("⚠️ Rating vs AI Sentiment Confusion Matrix")
+        # -------------------------------
+        # CONFUSION MATRIX
+        # -------------------------------
+        st.subheader("⚠️ Rating vs AI Sentiment Confusion Matrix")
+        cm = confusion_matrix(
+            df_result["rating_sentiment"],
+            df_result["ai_sentiment"],
+            labels=["negative", "neutral", "positive"]
+        )
 
-    cm = confusion_matrix(
-        df["rating_sentiment"],
-        df["sentiment"],
-        labels=["negative", "neutral", "positive"]
-    )
+        cm_df = pd.DataFrame(
+            cm,
+            index=["Rating Negative", "Rating Neutral", "Rating Positive"],
+            columns=["AI Negative", "AI Neutral", "AI Positive"]
+        )
 
-    cm_df = pd.DataFrame(
-        cm,
-        index=["Rating Negative", "Rating Neutral", "Rating Positive"],
-        columns=["AI Negative", "AI Neutral", "AI Positive"]
-    )
+        st.dataframe(cm_df)
 
-    st.dataframe(cm_df)
-
-    mismatch_rate = (df["rating_sentiment"] != df["sentiment"]).mean() * 100
-    st.warning(f"{mismatch_rate:.1f}% of reviews show sentiment–rating mismatch")
-
-    st.subheader("✅ Final Annotated Dataset")
-    st.dataframe(df)
+        mismatch_rate = (df_result["rating_sentiment"] != df_result["ai_sentiment"]).mean() * 100
+        st.warning(f"{mismatch_rate:.1f}% of reviews show sentiment–rating mismatch")
 
 else:
     st.info("⬆️ Upload a CSV file to begin analysis")
