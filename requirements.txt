@@ -4,3 +4,5 @@ plotly.express
 transformers
 scikit-learn
 numpy
+torch
+sentencepiece
