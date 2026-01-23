@@ -160,27 +160,24 @@ if uploaded_file:
     st.subheader("📄 Data Preview")
     st.dataframe(df.head())
 
+    reviews = df["Review"].astype(str).tolist()
+
     with st.spinner("Running sentiment analysis..."):
-        reviews = df["Review"].astype(str).tolist()
         sentiments = batch_predict(
-        sentiment_model,
-        reviews,
-        batch_size=8
-)
-
-df["sentiment"] = [label_map[s["label"]] for s in sentiments]
-
+            sentiment_model,
+            reviews,
+            batch_size=8
+        )
         df["sentiment"] = [label_map[s["label"]] for s in sentiments]
 
     with st.spinner("Detecting emotions..."):
-      emotions = batch_predict(
-        emotion_model,
-        reviews,
-        batch_size=4  # smaller because top_k=5
-)
-        df["emotion"] = [e[0]["label"] for e in emotions]  # top emotion only
-
-    df["rating_sentiment"] = df["Rating"].apply(rating_to_sentiment)
+        emotions = batch_predict(
+            emotion_model,
+            reviews,
+            batch_size=4
+        )
+        df["emotion"] = [e[0]["label"] for e in emotions]
+        df["rating_sentiment"] = df["Rating"].apply(rating_to_sentiment)
 
     # -------------------------------
     # KPIs
