@@ -39,6 +39,90 @@ def load_models():
 
 sentiment_model, emotion_model = load_models()
 
+# --- Single Review Analysis ---
+st.subheader("Single Review Analysis")
+user_review = st.text_area("Enter your review:")
+
+# Star rating input (horizontal stars)
+user_rating = st.radio(
+    "Rate the restaurant:",
+    options=[1, 2, 3, 4, 5],
+    format_func=lambda x: "⭐" * x,
+    horizontal=True
+)
+
+if st.button("Analyze Review"):
+    if user_review.strip() != "":
+        # --- Sentiment prediction ---
+        sentiment_result = sentiment_pipeline(user_review)[0]
+        sentiment_label = label_map.get(sentiment_result['label'], sentiment_result['label'])
+        sentiment_score = sentiment_result['score']
+
+        # --- Emotion prediction ---
+        emotion_results = emotion_pipeline(user_review)[0]
+        emotion_dict = {e['label'].lower(): e['score'] for e in emotion_results}
+
+        # --- Map rating to sentiment ---
+        def rating_to_sentiment(rating):
+            if rating >= 4:
+                return "positive"
+            elif rating == 3:
+                return "neutral"
+            else:
+                return "negative"
+
+        rating_sentiment = rating_to_sentiment(user_rating)
+
+        # --- Display results ---
+        st.subheader("Sentiment Analysis")
+        st.write(f"**Sentiment:** {sentiment_label}")
+        st.write(f"**Confidence:** {sentiment_score:.2f}")
+        st.write(f"**Rating Sentiment:** {rating_sentiment}")
+
+        # --- Emotion Pie Chart ---
+        st.subheader("Emotion Analysis (Bar Chart)")
+
+        # Prepare DataFrame
+        df_emotion = pd.DataFrame({
+            "Emotion": [f"{emoji_map.get(k, '')} {k.capitalize()}" for k in emotion_dict.keys()],
+            "Score": [round(v*100, 2) for v in emotion_dict.values()]  # convert to percentage
+        })
+       
+        # Sort for better visual
+        df_emotion = df_emotion.sort_values("Score", ascending=True)
+       
+        # Plot colorful horizontal bar chart
+        fig = px.bar(
+            df_emotion,
+            x="Score",
+            y="Emotion",
+            orientation="h",
+            text="Score",
+            color="Score",
+            color_continuous_scale="Viridis",  # you can use other scales like "Rainbow", "Plasma"
+            title="Emotion Confidence (%)"
+        )
+       
+        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig.update_layout(xaxis_title="Confidence (%)", yaxis_title="", xaxis_range=[0, 100])
+       
+        st.plotly_chart(fig)
+
+
+        # --- Compare sentiment and rating ---
+        st.subheader("Sentiment vs Rating Check")
+        if sentiment_label != rating_sentiment:
+            st.warning("⚠️ Mismatch detected!")
+            st.dataframe(pd.DataFrame([{
+                "Review": user_review,
+                "Rating": "⭐" * user_rating,
+                "Rating Sentiment": rating_sentiment,
+                "Predicted Sentiment": sentiment_label,
+                "Confidence": sentiment_score
+            }]))
+        else:
+            st.success("✅ No mismatch detected.")
+
 # -------------------------------
 # FILE UPLOAD
 # -------------------------------
@@ -201,87 +285,3 @@ if uploaded_file is not None:
 
 else:
     st.info("⬆️ Please upload a CSV file to start analysis.")
-
-# --- Single Review Analysis ---
-st.subheader("Single Review Analysis")
-user_review = st.text_area("Enter your review:")
-
-# Star rating input (horizontal stars)
-user_rating = st.radio(
-    "Rate the restaurant:",
-    options=[1, 2, 3, 4, 5],
-    format_func=lambda x: "⭐" * x,
-    horizontal=True
-)
-
-if st.button("Analyze Review"):
-    if user_review.strip() != "":
-        # --- Sentiment prediction ---
-        sentiment_result = sentiment_pipeline(user_review)[0]
-        sentiment_label = label_map.get(sentiment_result['label'], sentiment_result['label'])
-        sentiment_score = sentiment_result['score']
-
-        # --- Emotion prediction ---
-        emotion_results = emotion_pipeline(user_review)[0]
-        emotion_dict = {e['label'].lower(): e['score'] for e in emotion_results}
-
-        # --- Map rating to sentiment ---
-        def rating_to_sentiment(rating):
-            if rating >= 4:
-                return "positive"
-            elif rating == 3:
-                return "neutral"
-            else:
-                return "negative"
-
-        rating_sentiment = rating_to_sentiment(user_rating)
-
-        # --- Display results ---
-        st.subheader("Sentiment Analysis")
-        st.write(f"**Sentiment:** {sentiment_label}")
-        st.write(f"**Confidence:** {sentiment_score:.2f}")
-        st.write(f"**Rating Sentiment:** {rating_sentiment}")
-
-        # --- Emotion Pie Chart ---
-        st.subheader("Emotion Analysis (Bar Chart)")
-
-        # Prepare DataFrame
-        df_emotion = pd.DataFrame({
-            "Emotion": [f"{emoji_map.get(k, '')} {k.capitalize()}" for k in emotion_dict.keys()],
-            "Score": [round(v*100, 2) for v in emotion_dict.values()]  # convert to percentage
-        })
-       
-        # Sort for better visual
-        df_emotion = df_emotion.sort_values("Score", ascending=True)
-       
-        # Plot colorful horizontal bar chart
-        fig = px.bar(
-            df_emotion,
-            x="Score",
-            y="Emotion",
-            orientation="h",
-            text="Score",
-            color="Score",
-            color_continuous_scale="Viridis",  # you can use other scales like "Rainbow", "Plasma"
-            title="Emotion Confidence (%)"
-        )
-       
-        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-        fig.update_layout(xaxis_title="Confidence (%)", yaxis_title="", xaxis_range=[0, 100])
-       
-        st.plotly_chart(fig)
-
-
-        # --- Compare sentiment and rating ---
-        st.subheader("Sentiment vs Rating Check")
-        if sentiment_label != rating_sentiment:
-            st.warning("⚠️ Mismatch detected!")
-            st.dataframe(pd.DataFrame([{
-                "Review": user_review,
-                "Rating": "⭐" * user_rating,
-                "Rating Sentiment": rating_sentiment,
-                "Predicted Sentiment": sentiment_label,
-                "Confidence": sentiment_score
-            }]))
-        else:
-            st.success("✅ No mismatch detected.")
