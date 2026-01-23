@@ -155,7 +155,7 @@ if uploaded_file:
         st.stop()
 
     if len(df) > 300:
-    st.warning("Large dataset detected. Processing may take a while.")
+        st.warning("Large dataset detected. Processing may take a while.")
 
     st.subheader("📄 Data Preview")
     st.dataframe(df.head())
