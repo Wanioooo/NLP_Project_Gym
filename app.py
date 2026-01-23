@@ -142,32 +142,33 @@ if st.button("Analyze Review"):
 st.subheader("📂 Upload Review Dataset")
 
 uploaded_file = st.file_uploader(
-    "Upload CSV (columns: review_text, rating)",
+    "Upload CSV (columns: Review, Rating)",
     type="csv"
 )
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
 
-    if not {"review_text", "rating"}.issubset(df.columns):
-        st.error("CSV must contain 'review_text' and 'rating'")
+    if not {"Review", "Rating"}.issubset(df.columns):
+        st.error("CSV must contain 'Review' and 'Rating'")
         st.stop()
-
+st.markdown ("make sure columns name as return as 'Review' and 'Rating')
+             
     st.subheader("📄 Data Preview")
     st.dataframe(df.head())
 
     # Sentiment analysis
     with st.spinner("Analyzing sentiment..."):
-        sentiments = sentiment_model(df["review_text"].astype(str).tolist())
+        sentiments = sentiment_model(df["Review"].astype(str).tolist())
         df["sentiment"] = [label_map[s["label"]] for s in sentiments]
 
     # Emotion analysis
     with st.spinner("Detecting emotions..."):
-        emotions = emotion_model(df["review_text"].astype(str).tolist())
+        emotions = emotion_model(df["Review"].astype(str).tolist())
         df["emotion"] = [e[0]["label"] for e in emotions]
 
     # Rating sentiment
-    df["rating_sentiment"] = df["rating"].apply(rating_to_sentiment)
+    df["rating_sentiment"] = df["Rating"].apply(rating_to_sentiment)
 
     # KPIs
     st.subheader("📊 Key Metrics")
