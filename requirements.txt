@@ -2,5 +2,5 @@ streamlit
 pandas
 plotly.express
 transformers
-sklearn.metrics
+scikit-learn
 numpy
