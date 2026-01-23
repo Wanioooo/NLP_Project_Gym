@@ -1,0 +1,6 @@
+streamlit
+pandas
+plotly.express
+from transformers
+sklearn.metrics
+numpy
