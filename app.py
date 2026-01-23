@@ -63,13 +63,17 @@ sentiment_model, emotion_model = load_models()
 # -------------------------------
 # HELPER FUNCTIONS
 # -------------------------------
-def rating_to_sentiment(r):
-    if r >= 4:
-        return "positive"
-    elif r == 3:
-        return "neutral"
-    else:
-        return "negative"
+def batch_predict(pipeline_model, texts, batch_size=8):
+    results = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        preds = pipeline_model(
+            batch,
+            truncation=True,
+            max_length=256
+        )
+        results.extend(preds)
+    return results
 
 # -------------------------------
 # SINGLE REVIEW ANALYSIS
@@ -150,15 +154,30 @@ if uploaded_file:
         st.error("CSV must contain 'Review' and 'Rating' columns.")
         st.stop()
 
+    if len(df) > 300:
+    st.warning("Large dataset detected. Processing may take a while.")
+
     st.subheader("📄 Data Preview")
     st.dataframe(df.head())
 
     with st.spinner("Running sentiment analysis..."):
-        sentiments = sentiment_model(df["Review"].astype(str).tolist())
+        reviews = df["Review"].astype(str).tolist()
+        sentiments = batch_predict(
+        sentiment_model,
+        reviews,
+        batch_size=8
+)
+
+df["sentiment"] = [label_map[s["label"]] for s in sentiments]
+
         df["sentiment"] = [label_map[s["label"]] for s in sentiments]
 
     with st.spinner("Detecting emotions..."):
-        emotions = emotion_model(df["Review"].astype(str).tolist())
+      emotions = batch_predict(
+        emotion_model,
+        reviews,
+        batch_size=4  # smaller because top_k=5
+)
         df["emotion"] = [e[0]["label"] for e in emotions]  # top emotion only
 
     df["rating_sentiment"] = df["Rating"].apply(rating_to_sentiment)
