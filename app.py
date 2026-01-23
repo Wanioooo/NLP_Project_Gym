@@ -7,7 +7,6 @@ import pandas as pd
 import plotly.express as px
 from transformers import pipeline
 from sklearn.metrics import confusion_matrix
-import numpy as np
 
 # -------------------------------
 # PAGE CONFIG
@@ -22,221 +21,196 @@ st.title("🏋️ PureGym Customer Sentiment Analysis Dashboard")
 st.write("Analyze customer reviews using AI-powered sentiment and emotion detection.")
 
 # -------------------------------
-# LOAD MODELS (HEAVY BUT POWERFUL)
+# LABEL & EMOJI MAPS
+# -------------------------------
+label_map = {
+    "LABEL_0": "negative",
+    "LABEL_1": "neutral",
+    "LABEL_2": "positive"
+}
+
+emoji_map = {
+    "joy": "😄",
+    "anger": "😡",
+    "sadness": "😢",
+    "fear": "😨",
+    "surprise": "😲",
+    "disgust": "🤢",
+    "neutral": "😐"
+}
+
+# -------------------------------
+# LOAD MODELS
 # -------------------------------
 @st.cache_resource
 def load_models():
-    sentiment_pipeline = pipeline(
+    sentiment_model = pipeline(
         "sentiment-analysis",
         model="cardiffnlp/twitter-roberta-base-sentiment"
     )
-    emotion_pipeline = pipeline(
+
+    emotion_model = pipeline(
         "text-classification",
         model="j-hartmann/emotion-english-distilroberta-base",
-        top_k=1
+        top_k=5
     )
-    return sentiment_pipeline, emotion_pipeline
+
+    return sentiment_model, emotion_model
+
 
 sentiment_model, emotion_model = load_models()
 
-# --- Single Review Analysis ---
-st.subheader("Single Review Analysis")
+# -------------------------------
+# SINGLE REVIEW ANALYSIS
+# -------------------------------
+st.subheader("✍️ Single Review Analysis")
+
 user_review = st.text_area("Enter your review:")
 
-# Star rating input (horizontal stars)
 user_rating = st.radio(
-    "Rate the restaurant:",
+    "Give a rating:",
     options=[1, 2, 3, 4, 5],
     format_func=lambda x: "⭐" * x,
     horizontal=True
 )
 
+def rating_to_sentiment(r):
+    if r >= 4:
+        return "positive"
+    elif r == 3:
+        return "neutral"
+    else:
+        return "negative"
+
 if st.button("Analyze Review"):
-    if user_review.strip() != "":
-        # --- Sentiment prediction ---
-        sentiment_result = sentiment_pipeline(user_review)[0]
-        sentiment_label = label_map.get(sentiment_result['label'], sentiment_result['label'])
-        sentiment_score = sentiment_result['score']
+    if user_review.strip():
 
-        # --- Emotion prediction ---
-        emotion_results = emotion_pipeline(user_review)[0]
-        emotion_dict = {e['label'].lower(): e['score'] for e in emotion_results}
+        # Sentiment
+        sentiment_result = sentiment_model(user_review)[0]
+        sentiment_label = label_map[sentiment_result["label"]]
+        sentiment_score = sentiment_result["score"]
 
-        # --- Map rating to sentiment ---
-        def rating_to_sentiment(rating):
-            if rating >= 4:
-                return "positive"
-            elif rating == 3:
-                return "neutral"
-            else:
-                return "negative"
+        # Emotion
+        emotion_results = emotion_model(user_review)[0]
+        emotion_dict = {
+            e["label"]: round(e["score"] * 100, 2) for e in emotion_results
+        }
 
         rating_sentiment = rating_to_sentiment(user_rating)
 
-        # --- Display results ---
-        st.subheader("Sentiment Analysis")
-        st.write(f"**Sentiment:** {sentiment_label}")
+        # Display sentiment
+        st.subheader("🧠 Sentiment Result")
+        st.write(f"**Predicted Sentiment:** {sentiment_label}")
         st.write(f"**Confidence:** {sentiment_score:.2f}")
-        st.write(f"**Rating Sentiment:** {rating_sentiment}")
+        st.write(f"**Rating-based Sentiment:** {rating_sentiment}")
 
-        # --- Emotion Pie Chart ---
-        st.subheader("Emotion Analysis (Bar Chart)")
+        # Emotion chart
+        st.subheader("🎭 Emotion Detection")
 
-        # Prepare DataFrame
         df_emotion = pd.DataFrame({
-            "Emotion": [f"{emoji_map.get(k, '')} {k.capitalize()}" for k in emotion_dict.keys()],
-            "Score": [round(v*100, 2) for v in emotion_dict.values()]  # convert to percentage
-        })
-       
-        # Sort for better visual
-        df_emotion = df_emotion.sort_values("Score", ascending=True)
-       
-        # Plot colorful horizontal bar chart
+            "Emotion": [f"{emoji_map.get(k,'')} {k.capitalize()}" for k in emotion_dict.keys()],
+            "Score (%)": list(emotion_dict.values())
+        }).sort_values("Score (%)")
+
         fig = px.bar(
             df_emotion,
-            x="Score",
+            x="Score (%)",
             y="Emotion",
             orientation="h",
-            text="Score",
-            color="Score",
-            color_continuous_scale="Viridis",  # you can use other scales like "Rainbow", "Plasma"
+            text="Score (%)",
+            color="Score (%)",
+            color_continuous_scale="Viridis",
             title="Emotion Confidence (%)"
         )
-       
+
         fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-        fig.update_layout(xaxis_title="Confidence (%)", yaxis_title="", xaxis_range=[0, 100])
-       
-        st.plotly_chart(fig)
+        fig.update_layout(xaxis_range=[0, 100])
 
+        st.plotly_chart(fig, use_container_width=True)
 
-        # --- Compare sentiment and rating ---
-        st.subheader("Sentiment vs Rating Check")
+        # Sentiment vs Rating check
+        st.subheader("⚠️ Sentiment vs Rating Check")
+
         if sentiment_label != rating_sentiment:
-            st.warning("⚠️ Mismatch detected!")
-            st.dataframe(pd.DataFrame([{
-                "Review": user_review,
-                "Rating": "⭐" * user_rating,
-                "Rating Sentiment": rating_sentiment,
-                "Predicted Sentiment": sentiment_label,
-                "Confidence": sentiment_score
-            }]))
+            st.warning("Mismatch detected between sentiment and rating!")
         else:
-            st.success("✅ No mismatch detected.")
+            st.success("No mismatch detected.")
 
 # -------------------------------
 # FILE UPLOAD
 # -------------------------------
+st.subheader("📂 Upload Review Dataset")
+
 uploaded_file = st.file_uploader(
-    "📂 Upload PureGym Reviews CSV (must include: review_text, rating)",
+    "Upload CSV (columns: review_text, rating)",
     type="csv"
 )
 
-if uploaded_file is not None:
-
-    # -------------------------------
-    # READ DATA
-    # -------------------------------
+if uploaded_file:
     df = pd.read_csv(uploaded_file)
 
-    if "review_text" not in df.columns or "rating" not in df.columns:
-        st.error("❌ CSV must contain 'review_text' and 'rating' columns.")
+    if not {"review_text", "rating"}.issubset(df.columns):
+        st.error("CSV must contain 'review_text' and 'rating'")
         st.stop()
 
-    st.subheader("📄 Uploaded Data Preview")
+    st.subheader("📄 Data Preview")
     st.dataframe(df.head())
 
-    # -------------------------------
-    # SENTIMENT ANALYSIS
-    # -------------------------------
-    with st.spinner("🔍 Analyzing sentiment..."):
-        sentiment_results = sentiment_model(df["review_text"].astype(str).tolist())
-        df["sentiment"] = [s["label"] for s in sentiment_results]
+    # Sentiment analysis
+    with st.spinner("Analyzing sentiment..."):
+        sentiments = sentiment_model(df["review_text"].astype(str).tolist())
+        df["sentiment"] = [label_map[s["label"]] for s in sentiments]
 
-    # -------------------------------
-    # EMOTION ANALYSIS
-    # -------------------------------
-    with st.spinner("😊 Detecting emotions..."):
-        emotion_results = emotion_model(df["review_text"].astype(str).tolist())
-        df["emotion"] = [e[0]["label"] for e in emotion_results]
+    # Emotion analysis
+    with st.spinner("Detecting emotions..."):
+        emotions = emotion_model(df["review_text"].astype(str).tolist())
+        df["emotion"] = [e[0]["label"] for e in emotions]
 
-    # -------------------------------
-    # KPI METRICS
-    # -------------------------------
-    st.subheader("📊 Key Insights")
+    # Rating sentiment
+    df["rating_sentiment"] = df["rating"].apply(rating_to_sentiment)
+
+    # KPIs
+    st.subheader("📊 Key Metrics")
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric(
-        "Positive Reviews (%)",
-        round((df["sentiment"] == "LABEL_2").mean() * 100, 1)
-    )
-    col2.metric(
-        "Negative Reviews (%)",
-        round((df["sentiment"] == "LABEL_0").mean() * 100, 1)
-    )
-    col3.metric(
-        "Most Common Emotion",
-        df["emotion"].value_counts().idxmax()
-    )
+    col1.metric("Positive (%)", round((df["sentiment"] == "positive").mean() * 100, 1))
+    col2.metric("Negative (%)", round((df["sentiment"] == "negative").mean() * 100, 1))
+    col3.metric("Top Emotion", df["emotion"].value_counts().idxmax())
 
-    # -------------------------------
-    # SENTIMENT DISTRIBUTION
-    # -------------------------------
+    # Sentiment distribution
     st.subheader("📈 Sentiment Distribution")
 
-    sentiment_map = {
-        "LABEL_0": "Negative",
-        "LABEL_1": "Neutral",
-        "LABEL_2": "Positive"
-    }
-
-    df["sentiment_label"] = df["sentiment"].map(sentiment_map)
-
-    fig_sentiment = px.bar(
-        df["sentiment_label"].value_counts().reset_index(),
+    fig_sent = px.bar(
+        df["sentiment"].value_counts().reset_index(),
         x="index",
-        y="sentiment_label",
-        labels={"index": "Sentiment", "sentiment_label": "Count"},
+        y="sentiment",
+        labels={"index": "Sentiment", "sentiment": "Count"},
         title="Sentiment Polarity"
     )
-    st.plotly_chart(fig_sentiment, use_container_width=True)
 
-    # -------------------------------
-    # EMOTION DISTRIBUTION
-    # -------------------------------
+    st.plotly_chart(fig_sent, use_container_width=True)
+
+    # Emotion distribution
     st.subheader("🎭 Emotion Distribution")
 
-    fig_emotion = px.bar(
+    fig_emo = px.bar(
         df["emotion"].value_counts().reset_index(),
         x="index",
         y="emotion",
         labels={"index": "Emotion", "emotion": "Count"},
-        title="Detected Emotions"
+        title="Emotion Frequency"
     )
-    st.plotly_chart(fig_emotion, use_container_width=True)
 
-    # -------------------------------
-    # RATING TO SENTIMENT MAPPING
-    # -------------------------------
-    def rating_to_sentiment(r):
-        if r <= 2:
-            return "Negative"
-        elif r == 3:
-            return "Neutral"
-        else:
-            return "Positive"
+    st.plotly_chart(fig_emo, use_container_width=True)
 
-    df["rating_sentiment"] = df["rating"].apply(rating_to_sentiment)
-
-    # -------------------------------
-    # CONFUSION MATRIX
-    # -------------------------------
-    st.subheader("⚠️ Rating vs AI Sentiment Confusion")
+    # Confusion matrix
+    st.subheader("⚠️ Rating vs AI Sentiment Confusion Matrix")
 
     cm = confusion_matrix(
         df["rating_sentiment"],
-        df["sentiment_label"],
-        labels=["Negative", "Neutral", "Positive"]
+        df["sentiment"],
+        labels=["negative", "neutral", "positive"]
     )
 
     cm_df = pd.DataFrame(
@@ -247,41 +221,12 @@ if uploaded_file is not None:
 
     st.dataframe(cm_df)
 
-    mismatch_rate = (df["rating_sentiment"] != df["sentiment_label"]).mean() * 100
+    mismatch_rate = (df["rating_sentiment"] != df["sentiment"]).mean() * 100
+    st.warning(f"{mismatch_rate:.1f}% of reviews show sentiment–rating mismatch")
 
-    st.warning(
-        f"⚠️ {round(mismatch_rate, 1)}% of reviews have mismatched rating and sentiment."
-    )
-
-    # -------------------------------
-    # LIVE SOCIAL MEDIA FEED (SIMULATED)
-    # -------------------------------
-    st.subheader("📡 Live Social Media Feed (Simulated)")
-
-    live_feed = [
-        "PureGym is packed tonight 😡",
-        "Love the new equipment at PureGym!",
-        "Staff were helpful but gym was noisy",
-        "Best gym experience so far 💪",
-        "Too crowded, hard to workout properly"
-    ]
-
-    live_sentiment = sentiment_model(live_feed)
-    live_emotion = emotion_model(live_feed)
-
-    live_df = pd.DataFrame({
-        "Post": live_feed,
-        "Sentiment": [sentiment_map[s["label"]] for s in live_sentiment],
-        "Emotion": [e[0]["label"] for e in live_emotion]
-    })
-
-    st.dataframe(live_df)
-
-    # -------------------------------
-    # FINAL TABLE
-    # -------------------------------
+    # Final dataset
     st.subheader("✅ Final Annotated Dataset")
     st.dataframe(df)
 
 else:
-    st.info("⬆️ Please upload a CSV file to start analysis.")
+    st.info("⬆️ Upload a CSV file to begin analysis")
