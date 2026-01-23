@@ -61,6 +61,17 @@ def load_models():
 sentiment_model, emotion_model = load_models()
 
 # -------------------------------
+# HELPER FUNCTIONS
+# -------------------------------
+def rating_to_sentiment(r):
+    if r >= 4:
+        return "positive"
+    elif r == 3:
+        return "neutral"
+    else:
+        return "negative"
+
+# -------------------------------
 # SINGLE REVIEW ANALYSIS
 # -------------------------------
 st.subheader("✍️ Single Review Analysis")
@@ -74,23 +85,13 @@ user_rating = st.radio(
     horizontal=True
 )
 
-def rating_to_sentiment(r):
-    if r >= 4:
-        return "positive"
-    elif r == 3:
-        return "neutral"
-    else:
-        return "negative"
-
 if st.button("Analyze Review"):
     if user_review.strip():
 
-        # Sentiment
         sentiment_result = sentiment_model(user_review)[0]
         sentiment_label = label_map[sentiment_result["label"]]
         sentiment_score = sentiment_result["score"]
 
-        # Emotion
         emotion_results = emotion_model(user_review)[0]
         emotion_dict = {
             e["label"]: round(e["score"] * 100, 2) for e in emotion_results
@@ -98,17 +99,15 @@ if st.button("Analyze Review"):
 
         rating_sentiment = rating_to_sentiment(user_rating)
 
-        # Display sentiment
         st.subheader("🧠 Sentiment Result")
         st.write(f"**Predicted Sentiment:** {sentiment_label}")
         st.write(f"**Confidence:** {sentiment_score:.2f}")
         st.write(f"**Rating-based Sentiment:** {rating_sentiment}")
 
-        # Emotion chart
         st.subheader("🎭 Emotion Detection")
 
         df_emotion = pd.DataFrame({
-            "Emotion": [f"{emoji_map.get(k,'')} {k.capitalize()}" for k in emotion_dict.keys()],
+            "Emotion": [f"{emoji_map.get(k,'')} {k.capitalize()}" for k in emotion_dict],
             "Score (%)": list(emotion_dict.values())
         }).sort_values("Score (%)")
 
@@ -118,8 +117,6 @@ if st.button("Analyze Review"):
             y="Emotion",
             orientation="h",
             text="Score (%)",
-            color="Score (%)",
-            color_continuous_scale="Viridis",
             title="Emotion Confidence (%)"
         )
 
@@ -128,21 +125,21 @@ if st.button("Analyze Review"):
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # Sentiment vs Rating check
         st.subheader("⚠️ Sentiment vs Rating Check")
 
         if sentiment_label != rating_sentiment:
-            st.warning("Mismatch detected between sentiment and rating!")
+            st.warning("Mismatch detected between AI sentiment and user rating!")
         else:
-            st.success("No mismatch detected.")
+            st.success("Sentiment matches rating.")
 
 # -------------------------------
 # FILE UPLOAD
 # -------------------------------
 st.subheader("📂 Upload Review Dataset")
+st.markdown("📌 **CSV must contain columns named exactly:** `Review` and `Rating`")
 
 uploaded_file = st.file_uploader(
-    "Upload CSV (columns: Review, Rating)",
+    "Upload CSV file",
     type="csv"
 )
 
@@ -150,27 +147,25 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
 
     if not {"Review", "Rating"}.issubset(df.columns):
-        st.error("CSV must contain 'Review' and 'Rating'")
+        st.error("CSV must contain 'Review' and 'Rating' columns.")
         st.stop()
-st.markdown ("make sure columns name as return as 'Review' and 'Rating')
-             
+
     st.subheader("📄 Data Preview")
     st.dataframe(df.head())
 
-    # Sentiment analysis
-    with st.spinner("Analyzing sentiment..."):
+    with st.spinner("Running sentiment analysis..."):
         sentiments = sentiment_model(df["Review"].astype(str).tolist())
         df["sentiment"] = [label_map[s["label"]] for s in sentiments]
 
-    # Emotion analysis
     with st.spinner("Detecting emotions..."):
         emotions = emotion_model(df["Review"].astype(str).tolist())
-        df["emotion"] = [e[0]["label"] for e in emotions]
+        df["emotion"] = [e[0]["label"] for e in emotions]  # top emotion only
 
-    # Rating sentiment
     df["rating_sentiment"] = df["Rating"].apply(rating_to_sentiment)
 
+    # -------------------------------
     # KPIs
+    # -------------------------------
     st.subheader("📊 Key Metrics")
 
     col1, col2, col3 = st.columns(3)
@@ -179,33 +174,34 @@ st.markdown ("make sure columns name as return as 'Review' and 'Rating')
     col2.metric("Negative (%)", round((df["sentiment"] == "negative").mean() * 100, 1))
     col3.metric("Top Emotion", df["emotion"].value_counts().idxmax())
 
-    # Sentiment distribution
+    # -------------------------------
+    # VISUALS
+    # -------------------------------
     st.subheader("📈 Sentiment Distribution")
 
     fig_sent = px.bar(
         df["sentiment"].value_counts().reset_index(),
         x="index",
         y="sentiment",
-        labels={"index": "Sentiment", "sentiment": "Count"},
-        title="Sentiment Polarity"
+        labels={"index": "Sentiment", "sentiment": "Count"}
     )
 
     st.plotly_chart(fig_sent, use_container_width=True)
 
-    # Emotion distribution
     st.subheader("🎭 Emotion Distribution")
 
     fig_emo = px.bar(
         df["emotion"].value_counts().reset_index(),
         x="index",
         y="emotion",
-        labels={"index": "Emotion", "emotion": "Count"},
-        title="Emotion Frequency"
+        labels={"index": "Emotion", "emotion": "Count"}
     )
 
     st.plotly_chart(fig_emo, use_container_width=True)
 
-    # Confusion matrix
+    # -------------------------------
+    # CONFUSION MATRIX
+    # -------------------------------
     st.subheader("⚠️ Rating vs AI Sentiment Confusion Matrix")
 
     cm = confusion_matrix(
@@ -225,7 +221,6 @@ st.markdown ("make sure columns name as return as 'Review' and 'Rating')
     mismatch_rate = (df["rating_sentiment"] != df["sentiment"]).mean() * 100
     st.warning(f"{mismatch_rate:.1f}% of reviews show sentiment–rating mismatch")
 
-    # Final dataset
     st.subheader("✅ Final Annotated Dataset")
     st.dataframe(df)
 
