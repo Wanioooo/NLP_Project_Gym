@@ -136,84 +136,100 @@ if st.button("Analyze Review"):
         else:
             st.success("Sentiment matches rating.")
 
-# -------------------------------
-# FILE UPLOAD
-# -------------------------------
-st.subheader("📂 Upload Review Dataset")
-st.markdown("📌 **CSV must contain columns named exactly:** `Review` and `Rating`")
+# ======================================================
+# 📁 BATCH REVIEW ANALYSIS
+# ======================================================
+st.header("📁 Batch Review Analysis (CSV Upload)")
 
-uploaded_file = st.file_uploader(
-    "Upload CSV file",
-    type="csv"
-)
+uploaded_file = st.file_uploader("Upload a CSV file containing reviews:", type=["csv"])
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
-
-    if not {"Review", "Rating"}.issubset(df.columns):
-        st.error("CSV must contain 'Review' and 'Rating' columns.")
-        st.stop()
-
-    if len(df) > 300:
-        st.warning("Large dataset detected. Processing may take a while.")
-
-    st.subheader("📄 Data Preview")
+    st.write("Preview of uploaded dataset:")
     st.dataframe(df.head())
 
-    reviews = df["Review"].astype(str).tolist()
-
-    with st.spinner("Running sentiment analysis..."):
-        sentiments = batch_predict(
-            sentiment_model,
-            reviews,
-            batch_size=8
-        )
-        df["sentiment"] = [label_map[s["label"]] for s in sentiments]
-
-    with st.spinner("Detecting emotions..."):
-        emotions = batch_predict(
-            emotion_model,
-            reviews,
-            batch_size=4
-        )
-        df["emotion"] = [e[0]["label"] for e in emotions]
-        df["rating_sentiment"] = df["Rating"].apply(rating_to_sentiment)
-
-    # -------------------------------
-    # KPIs
-    # -------------------------------
-    st.subheader("📊 Key Metrics")
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("Positive (%)", round((df["sentiment"] == "positive").mean() * 100, 1))
-    col2.metric("Negative (%)", round((df["sentiment"] == "negative").mean() * 100, 1))
-    col3.metric("Top Emotion", df["emotion"].value_counts().idxmax())
-
-    # -------------------------------
-    # VISUALS
-    # -------------------------------
-    st.subheader("📈 Sentiment Distribution")
-
-    fig_sent = px.bar(
-        df["sentiment"].value_counts().reset_index(),
-        x="index",
-        y="sentiment",
-        labels={"index": "Sentiment", "sentiment": "Count"}
+    text_column = st.selectbox(
+        "Select the column that contains review text:",
+        df.columns
     )
 
-    st.plotly_chart(fig_sent, use_container_width=True)
-
-    st.subheader("🎭 Emotion Distribution")
-
-    fig_emo = px.bar(
-        df["emotion"].value_counts().reset_index(),
-        x="index",
-        y="emotion",
-        labels={"index": "Emotion", "emotion": "Count"}
+    # 🔧 FIX 1: slider MUST be here (df already exists)
+    max_rows = st.slider(
+        "Limit number of reviews to analyze (for performance):",
+        min_value=100,
+        max_value=min(2000, len(df)),
+        value=500,
+        step=100
     )
 
-    st.plotly_chart(fig_emo, use_container_width=True)
+    if st.button("Analyze Dataset"):
+        with st.spinner("Analyzing reviews... Please wait."):
+
+            # 🔧 FIX 2: LIMIT rows here
+            texts = (
+                df[text_column]
+                .astype(str)
+                .apply(clean_text)
+                .tolist()[:max_rows]
+            )
+
+            sentiments = sentiment_pipeline(
+                texts,
+                batch_size=32,
+                truncation=True
+            )
+
+            emotions = emotion_pipeline(
+                texts,
+                batch_size=32,
+                truncation=True
+            )
+
+            df_result = df.head(max_rows).copy()
+
+            df_result["Sentiment"] = [
+                "Positive" if s["label"] == "POSITIVE" else "Negative"
+                for s in sentiments
+            ]
+            df_result["Sentiment_Score"] = [s["score"] for s in sentiments]
+
+            df_result["Emotion"] = [e["label"] for e in emotions]
+            df_result["Emotion_Score"] = [e["score"] for e in emotions]
+
+        st.success("Batch analysis completed!")
+
+        st.dataframe(df_result.head())
+
+        # -------------------------------
+        # Batch Summary Statistics
+        # -------------------------------
+        st.subheader("📊 Batch Analysis Summary")
+
+        total_reviews = len(df_result)
+        sentiment_counts = df_result["Sentiment"].value_counts(normalize=True) * 100
+
+        positive_pct = sentiment_counts.get("Positive", 0)
+        negative_pct = sentiment_counts.get("Negative", 0)
+
+        dominant_emotion = df_result["Emotion"].value_counts().idxmax()
+
+        st.write(f"*Total reviews analyzed:* {total_reviews}")
+        st.write(f"*Positive reviews:* {positive_pct:.2f}%")
+        st.write(f"*Negative reviews:* {negative_pct:.2f}%")
+        st.write(f"*Dominant emotion:* {dominant_emotion.capitalize()}")
+
+        if positive_pct > negative_pct:
+            st.info("📌 Overall sentiment trend: Mostly Positive")
+        else:
+            st.info("📌 Overall sentiment trend: Mostly Negative")
+
+        csv = df_result.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "⬇️ Download Results as CSV",
+            csv,
+            "sentiment_emotion_results.csv",
+            "text/csv"
+        )
 
     # -------------------------------
     # CONFUSION MATRIX
