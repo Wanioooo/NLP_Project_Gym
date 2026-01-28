@@ -5,7 +5,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import snscrape.modules.twitter as sntwitter
 from collections import Counter
 from transformers import pipeline
 from sklearn.metrics import confusion_matrix
@@ -89,14 +88,8 @@ def clean_text(text):
     return str(text).strip()
 
 def fetch_tweets(query, limit=50):
-    tweets = []
-    for i, tweet in enumerate(
-        sntwitter.TwitterSearchScraper(query).get_items()
-    ):
-        if i >= limit:
-            break
-        tweets.append(tweet.content)
-    return tweets
+    df = pd.read_csv("sample_tweets.csv")  # your collected tweets
+    return df["tweet"].astype(str).tolist()[:limit]
 
 # -------------------------------
 # SINGLE REVIEW ANALYSIS
