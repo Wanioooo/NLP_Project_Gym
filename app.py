@@ -88,8 +88,25 @@ def clean_text(text):
     return str(text).strip()
 
 def fetch_tweets(query, limit=50):
-    df = pd.read_csv("sample_tweets.csv")  # your collected tweets
-    return df["tweet"].astype(str).tolist()[:limit]
+    try:
+        df = pd.read_csv("sample_tweets.csv")
+        tweets = df["tweet"].astype(str).tolist()
+    except FileNotFoundError:
+        # Fallback sample tweets (safe for Streamlit Cloud)
+        tweets = [
+            "PureGym has amazing equipment and friendly staff!",
+            "Too crowded during peak hours, very frustrating.",
+            "Affordable gym membership and clean facilities.",
+            "Terrible customer service, very disappointed.",
+            "Love the 24/7 access, makes life so much easier.",
+            "Machines were broken for weeks.",
+            "Great value for money and motivating environment.",
+            "Staff were rude and unhelpful.",
+            "Best gym experience I've had so far!",
+            "Gym is okay but can be overcrowded sometimes."
+        ]
+    return tweets[:limit]
+
 
 # -------------------------------
 # SINGLE REVIEW ANALYSIS
