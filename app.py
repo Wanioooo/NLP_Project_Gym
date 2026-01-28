@@ -253,9 +253,13 @@ else:
     st.info("⬆️ Upload a CSV file to begin analysis")
 
 # ======================================================
-# 🔴 LIVE TWITTER (X) SENTIMENT ANALYSIS
+# 🔴 SIMULATED LIVE SOCIAL MEDIA FEED ANALYSIS
 # ======================================================
-st.header("🔴 Live Social Media Feed Analysis (Twitter/X)")
+st.header("🔴 Live Social Media Feed Analysis (Simulated Twitter/X)")
+
+st.caption(
+    "⚠️ Live tweets are simulated using a pre-collected dataset due to API and platform limitations."
+)
 
 query = st.text_input(
     "Search keyword or hashtag:",
@@ -263,56 +267,47 @@ query = st.text_input(
 )
 
 tweet_limit = st.slider(
-    "Number of tweets to analyze:",
-    min_value=10,
-    max_value=200,
-    value=50,
-    step=10
+    "Number of social media posts to analyze:",
+    min_value=5,
+    max_value=50,
+    value=10,
+    step=5
 )
 
-if st.button("Analyze Live Tweets"):
-    with st.spinner("Fetching and analyzing tweets..."):
+if st.button("Analyze Social Media Feed"):
+    with st.spinner("Analyzing social media sentiment..."):
         tweets = fetch_tweets(query, tweet_limit)
+        sentiment_preds = batch_predict(sentiment_model, tweets)
 
-        if len(tweets) == 0:
-            st.warning("No tweets found.")
-        else:
-            sentiment_preds = batch_predict(sentiment_model, tweets)
+        sentiments = [label_map[s["label"]] for s in sentiment_preds]
 
-            tweet_sentiments = [
-                label_map[s["label"]] for s in sentiment_preds
-            ]
+        df_social = pd.DataFrame({
+            "Post": tweets,
+            "Predicted Sentiment": sentiments
+        })
 
-            df_tweets = pd.DataFrame({
-                "Tweet": tweets,
-                "Predicted Sentiment": tweet_sentiments
-            })
-
-    st.success("Live Twitter analysis completed!")
+    st.success("Social media sentiment analysis completed!")
 
     # -------------------------------
     # Sentiment Distribution
     # -------------------------------
-    st.subheader("📊 Twitter Sentiment Distribution")
+    st.subheader("📊 Social Media Sentiment Distribution")
 
-    sentiment_counts = Counter(tweet_sentiments)
-    df_dist = pd.DataFrame({
-        "Sentiment": sentiment_counts.keys(),
-        "Count": sentiment_counts.values()
-    })
+    sentiment_counts = df_social["Predicted Sentiment"].value_counts().reset_index()
+    sentiment_counts.columns = ["Sentiment", "Count"]
 
     fig = px.pie(
-        df_dist,
+        sentiment_counts,
         names="Sentiment",
         values="Count",
-        title="Live Twitter Sentiment Breakdown"
+        title="Sentiment Distribution from Social Media Posts"
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
     # -------------------------------
-    # Display Tweets
+    # Display Posts
     # -------------------------------
-    st.subheader("📝 Recent Tweets & AI Sentiment")
-    st.dataframe(df_tweets.head(20))
+    st.subheader("📝 Social Media Posts & AI Sentiment")
+    st.dataframe(df_social)
 
