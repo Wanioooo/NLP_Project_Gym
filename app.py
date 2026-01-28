@@ -5,6 +5,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import snscrape.modules.twitter as sntwitter
+from collections import Counter
 from transformers import pipeline
 from sklearn.metrics import confusion_matrix
 
@@ -85,6 +87,16 @@ def rating_to_sentiment(rating):
 # Optional: clean text if needed
 def clean_text(text):
     return str(text).strip()
+
+def fetch_tweets(query, limit=50):
+    tweets = []
+    for i, tweet in enumerate(
+        sntwitter.TwitterSearchScraper(query).get_items()
+    ):
+        if i >= limit:
+            break
+        tweets.append(tweet.content)
+    return tweets
 
 # -------------------------------
 # SINGLE REVIEW ANALYSIS
@@ -246,3 +258,68 @@ if uploaded_file:
 
 else:
     st.info("⬆️ Upload a CSV file to begin analysis")
+
+# ======================================================
+# 🔴 LIVE TWITTER (X) SENTIMENT ANALYSIS
+# ======================================================
+st.header("🔴 Live Social Media Feed Analysis (Twitter/X)")
+
+query = st.text_input(
+    "Search keyword or hashtag:",
+    value="PureGym"
+)
+
+tweet_limit = st.slider(
+    "Number of tweets to analyze:",
+    min_value=10,
+    max_value=200,
+    value=50,
+    step=10
+)
+
+if st.button("Analyze Live Tweets"):
+    with st.spinner("Fetching and analyzing tweets..."):
+        tweets = fetch_tweets(query, tweet_limit)
+
+        if len(tweets) == 0:
+            st.warning("No tweets found.")
+        else:
+            sentiment_preds = batch_predict(sentiment_model, tweets)
+
+            tweet_sentiments = [
+                label_map[s["label"]] for s in sentiment_preds
+            ]
+
+            df_tweets = pd.DataFrame({
+                "Tweet": tweets,
+                "Predicted Sentiment": tweet_sentiments
+            })
+
+    st.success("Live Twitter analysis completed!")
+
+    # -------------------------------
+    # Sentiment Distribution
+    # -------------------------------
+    st.subheader("📊 Twitter Sentiment Distribution")
+
+    sentiment_counts = Counter(tweet_sentiments)
+    df_dist = pd.DataFrame({
+        "Sentiment": sentiment_counts.keys(),
+        "Count": sentiment_counts.values()
+    })
+
+    fig = px.pie(
+        df_dist,
+        names="Sentiment",
+        values="Count",
+        title="Live Twitter Sentiment Breakdown"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # -------------------------------
+    # Display Tweets
+    # -------------------------------
+    st.subheader("📝 Recent Tweets & AI Sentiment")
+    st.dataframe(df_tweets.head(20))
+
